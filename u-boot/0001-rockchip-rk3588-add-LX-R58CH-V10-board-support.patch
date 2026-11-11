@@ -97,7 +97,7 @@ diff --git a/configs/lz-rk58ch-rk3588_defconfig b/configs/lz-rk58ch-rk3588_defco
 new file mode 100644
 --- /dev/null
 +++ b/configs/lz-rk58ch-rk3588_defconfig
-@@ -0,0 +1,216 @@
+@@ -0,0 +1,228 @@
 +CONFIG_ARM=y
 +CONFIG_ARM_CPU_SUSPEND=y
 +CONFIG_ARCH_ROCKCHIP=y
@@ -314,5 +314,17 @@ new file mode 100644
 +CONFIG_AVB_LIBAVB_ATX=y
 +CONFIG_AVB_LIBAVB_USER=y
 +CONFIG_RK_AVB_LIBAVB_USER=y
++
++# Persistent U-Boot environment on eMMC (saveenv support).
++# The Android-flavoured reference configs default to nowhere (misc/BCB
++# flow), so plain saveenv prints "Saving Environment to nowhere...".
++# Store a 32 KiB env blob at the 1 MiB mark of eMMC (dev 0): clear of the
++# idbloader at 32 KiB and of u-boot.itb at 8 MiB, and below the boot
++# partition that starts at 16 MiB.
++CONFIG_CMD_SAVEENV=y
++CONFIG_ENV_IS_IN_MMC=y
++CONFIG_SYS_MMC_ENV_DEV=0
++CONFIG_ENV_SIZE=0x8000
++CONFIG_ENV_OFFSET=0x100000
 --
 2.39.2
