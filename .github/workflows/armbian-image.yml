@@ -78,7 +78,10 @@ jobs:
       - name: Build the image
         working-directory: build
         run: |
-          ./compile.sh create \
+          # Current armbian/build CLI: 'create' was removed; 'build' is the
+          # full-image command (auto-relaunches into the official Docker
+          # builder container on GitHub runners, host deps included).
+          ./compile.sh build \
             BOARD=lz-rk58ch \
             BRANCH=vendor \
             RELEASE=${{ inputs.release }} \
