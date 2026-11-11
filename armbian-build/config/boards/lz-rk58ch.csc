@@ -11,6 +11,10 @@ BOOT_LOGO="desktop"
 BOOT_FDT_FILE="rockchip/rk3588-lz-rk58ch.dtb"
 BOOT_SCENARIO="spl-blobs"
 IMAGE_PARTITION_TABLE="gpt"
+# Keep the classic two-partition layout: separate ext4 /boot partition
+# (easy to mount/edit boot.scr, armbianEnv.txt, DTBs from any host)
+# plus the rootfs partition.
+BOOTFS_TYPE="ext4"
 
 # Serial console: UART2 on the M2 pins (GPIO3_B1/B2), fiq-debugger
 # (ttyFIQ0 @ 1500000). The rockchip-rk3588 family already defaults SERIALCON
