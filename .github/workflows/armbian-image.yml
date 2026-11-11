@@ -126,7 +126,7 @@ jobs:
           ref: main
           path: build
 
-      - name: Install the board file (+ kernel-source override for testing)
+      - name: Install the board file (+ kernel/u-boot source override for testing)
         run: |
           cp armbian-build/config/boards/lz-rk58ch.csc build/config/boards/
           if [ -n "${{ inputs.kernel_repo }}" ]; then
@@ -136,6 +136,16 @@ jobs:
             printf '\tdeclare -g KERNELBRANCH="branch:%s"\n' "${{ inputs.kernel_branch }}" >> build/config/boards/lz-rk58ch.csc
             printf '}\n' >> build/config/boards/lz-rk58ch.csc
           fi
+          # U-Boot: dedicated board defconfig lives in the fork of radxa/u-boot
+          # (branch next-dev-v2024.10-lz-rk58ch). The interim rock-5b defconfig
+          # boots nowhere: it silences the console (CONFIG_DISABLE_CONSOLE) and
+          # brings up pcie3x4/pcie30phy which this board does not have.
+          printf '\n# board-specific U-Boot (UART2-M2 console, no PCIe)\n' >> build/config/boards/lz-rk58ch.csc
+          printf 'function post_family_config__lz_rk58ch_uboot_source() {\n' >> build/config/boards/lz-rk58ch.csc
+          printf '\tdeclare -g BOOTSOURCE="https://github.com/LSP0123/u-boot.git"\n' >> build/config/boards/lz-rk58ch.csc
+          printf '\tdeclare -g BOOTBRANCH="branch:next-dev-v2024.10-lz-rk58ch"\n' >> build/config/boards/lz-rk58ch.csc
+          printf '\tdeclare -g BOOTCONFIG="lz-rk58ch-rk3588_defconfig"\n' >> build/config/boards/lz-rk58ch.csc
+          printf '}\n' >> build/config/boards/lz-rk58ch.csc
           cat build/config/boards/lz-rk58ch.csc
 
       - name: Build the image
