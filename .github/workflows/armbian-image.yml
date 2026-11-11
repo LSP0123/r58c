@@ -1,9 +1,9 @@
 name: Build Armbian image (manual)
 
 # 可选：手动触发，调用 armbian/build 框架为 lz-rk58ch 构建完整 Armbian 镜像。
-# 前提：内核 DTS 提交已存在于某个 linux-rockchip 分支（你的 fork 或已合并的上游分支），
-# 通过输入参数 kernel_repo / kernel_branch 指向它；否则打包阶段会因缺少 dtb 而失败。
-# 镜像构建耗时约 40~90 分钟。
+# 默认参数已固化（用户指定）：release=trixie、内核用 LSP0123 fork 的
+# rk-6.1-rkr7.2-lz-rk58ch 分支（携带 rk3588-lz-rk58ch.dts 提交）。
+# 点击 Run workflow 直接跑即可；镜像构建耗时约 40~90 分钟。
 
 on:
   workflow_dispatch:
@@ -18,9 +18,9 @@ on:
           - trixie
           - noble
       kernel_repo:
-        description: 'Kernel repo containing the DTS commit (your fork of armbian/linux-rockchip), e.g. https://github.com/you/linux-rockchip.git'
+        description: 'Kernel repo containing the DTS commit (fork of armbian/linux-rockchip)'
         required: false
-        default: ''
+        default: 'https://github.com/LSP0123/linux-rockchip'
       kernel_branch:
         description: 'Kernel branch containing the DTS commit'
         required: false
@@ -42,9 +42,9 @@ jobs:
       - name: Pre-flight check for kernel inputs
         run: |
           if [ -z "${{ inputs.kernel_repo }}" ]; then
-            echo "::error::镜像构建需要 kernel_repo 输入（携带 DTS 提交的 linux-rockchip fork 地址）。"
-            echo "::error::官方 rk-6.1-rkr7.2 分支还没有 rk3588-lz-rk58ch.dts，不填参数会在打包阶段失败。"
-            echo "::error::请先把补丁推到你 fork 的分支（见 README 第三节），再带 kernel_repo/kernel_branch 重新运行。"
+            echo "::error::kernel_repo 为空（默认值被清空）。官方 rk-6.1-rkr7.2 分支还没有 rk3588-lz-rk58ch.dts，"
+            echo "::error::不指定携带 DTS 提交的 fork 分支会在打包阶段失败。"
+            echo "::error::请填回 https://github.com/LSP0123/linux-rockchip 后重新运行。"
             exit 1
           fi
 
@@ -81,10 +81,14 @@ jobs:
           # Current armbian/build CLI: 'create' was removed; 'build' is the
           # full-image command (auto-relaunches into the official Docker
           # builder container on GitHub runners, host deps included).
+          # KERNEL_CONFIGURE=no: CI has no tty, so the interactive
+          # "Select the kernel configuration" dialog must be answered
+          # in advance (no menuconfig).
           ./compile.sh build \
             BOARD=lz-rk58ch \
             BRANCH=vendor \
             RELEASE=${{ inputs.release }} \
+            KERNEL_CONFIGURE=no \
             BUILD_MINIMAL=no \
             BUILD_DESKTOP=no \
             BUILD_STABLE=no \
