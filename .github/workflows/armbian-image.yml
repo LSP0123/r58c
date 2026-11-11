@@ -41,6 +41,11 @@ on:
           - minimal
           - mid
           - full
+      variants:
+        description: 'Image variants: comma list of minimal/desktop-gnome/desktop-kde/desktop-xfce (empty = all four)'
+        required: false
+        default: 'desktop-gnome'
+        type: string
 
 permissions:
   contents: write   # 发布 release 需要
@@ -64,30 +69,44 @@ jobs:
           echo "reltitle=$(date -u +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
           echo "reldate=$(date -u +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_OUTPUT
 
+  # 依据 variants 输入项筛选 matrix（空 = 全部四个；本次用户指定仅 gnome）
+  matrix_prep:
+    name: Prepare image matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.mk.outputs.matrix }}
+    steps:
+      - name: Build matrix JSON
+        id: mk
+        run: |
+          ALL='[
+            {"variant":"minimal","build_minimal":"yes","build_desktop":"no"},
+            {"variant":"desktop-gnome","build_minimal":"no","build_desktop":"yes","desktop_environment":"gnome"},
+            {"variant":"desktop-kde","build_minimal":"no","build_desktop":"yes","desktop_environment":"kde-plasma"},
+            {"variant":"desktop-xfce","build_minimal":"no","build_desktop":"yes","desktop_environment":"xfce"}
+          ]'
+          WANT='${{ inputs.variants }}'
+          if [ -z "${WANT// /}" ]; then
+            MATRIX="$ALL"
+          else
+            MATRIX=$(echo "$ALL" | jq -c --arg want ",$WANT," \
+              '[.[] | select(. as $e | ($want | contains("," + $e.variant + ",")))]')
+          fi
+          echo "$MATRIX" | jq -e 'length > 0' >/dev/null || {
+            echo "::error::variants 输入无效，过滤后没有任何变体"; exit 1;
+          }
+          echo "matrix=$(echo "$MATRIX" | jq -c .)" >> $GITHUB_OUTPUT
+          echo "selected: $(echo "$MATRIX" | jq -r '[.[].variant] | join(", ")')"
+
   build-image:
     name: Image ${{ matrix.variant }}
-    needs: [ timestamp ]
+    needs: [ timestamp, matrix_prep ]
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - variant: minimal
-            build_minimal: 'yes'
-            build_desktop: 'no'
-          - variant: desktop-gnome
-            build_minimal: 'no'
-            build_desktop: 'yes'
-            desktop_environment: 'gnome'
-          - variant: desktop-kde
-            build_minimal: 'no'
-            build_desktop: 'yes'
-            desktop_environment: 'kde-plasma'
-          - variant: desktop-xfce
-            build_minimal: 'no'
-            build_desktop: 'yes'
-            desktop_environment: 'xfce'
+        include: ${{ fromJson(needs.matrix_prep.outputs.matrix) }}
     steps:
       - name: Checkout submission repo
         uses: actions/checkout@v4
