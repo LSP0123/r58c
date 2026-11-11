@@ -1,0 +1,76 @@
+name: Kernel DTB check
+
+# 验证 linux-rockchip/ 下的 DTS 补丁能否干净地应用到 Armbian vendor 内核分支
+# rk-6.1-rkr7.2，并交叉编译出 rk3588-lz-rk58ch.dtb。
+# 用法：把本目录(armbian/)内容放到任意 GitHub 仓库根目录并推送即可。
+
+on:
+  push:
+    paths:
+      - 'linux-rockchip/**'
+      - '.github/workflows/dtb-check.yml'
+  pull_request:
+    paths:
+      - 'linux-rockchip/**'
+  workflow_dispatch:
+
+concurrency:
+  group: dtb-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-dtb:
+    name: Apply patch and build rk3588-lz-rk58ch.dtb
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout submission repo
+        uses: actions/checkout@v4
+
+      - name: Checkout Armbian vendor kernel (rk-6.1-rkr7.2)
+        uses: actions/checkout@v4
+        with:
+          repository: armbian/linux-rockchip
+          ref: rk-6.1-rkr7.2
+          path: kernel
+          fetch-depth: 1
+
+      - name: Apply the DTS patch (git am, same as upstream would)
+        working-directory: kernel
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git am --3way "${GITHUB_WORKSPACE}/linux-rockchip/0001-arm64-dts-rockchip-add-LX-R58CH-V10-support.patch"
+          git show --stat HEAD
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-aarch64-linux-gnu bison flex libssl-dev bc
+
+      - name: Configure and build the DTB
+        working-directory: kernel
+        run: |
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- rockchip_linux_defconfig
+          make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" \
+            arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dtb
+
+      - name: Decompile and sanity-check the DTB
+        working-directory: kernel
+        run: |
+          scripts/dtc/dtc -q -I dtb -O dts -o /tmp/check.dts \
+            arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dtb
+          grep -q 'LX-R58CH V10' /tmp/check.dts
+          grep -q 'rockchip,rk806' /tmp/check.dts
+          grep -q 'everest,es8388' /tmp/check.dts
+          grep -q 'ap6256' /tmp/check.dts
+          echo "okay count: $(grep -c 'status = "okay"' /tmp/check.dts)"
+          echo "disabled count: $(grep -c 'status = "disabled"' /tmp/check.dts)"
+
+      - name: Upload DTB artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rk3588-lz-rk58ch.dtb
+          path: kernel/arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dtb
+          if-no-files-found: error
