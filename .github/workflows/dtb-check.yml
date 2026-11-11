@@ -53,8 +53,10 @@ jobs:
         working-directory: kernel
         run: |
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- rockchip_linux_defconfig
+          # The kernel's %.dtb rule re-prepends $(dtstree)/, so pass the target
+          # relative to arch/arm64/boot/dts/ — NOT the full tree path.
           make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j"$(nproc)" \
-            arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dtb
+            rockchip/rk3588-lz-rk58ch.dtb
 
       - name: Decompile and sanity-check the DTB
         working-directory: kernel
