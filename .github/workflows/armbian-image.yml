@@ -1,10 +1,16 @@
 name: Build Armbian image (manual)
 
-# 手动触发，调用 armbian/build 框架为 lz-rk58ch 构建完整 Armbian 镜像。
-# 默认参数已固化（用户指定）：release=trixie、内核用 LSP0123 fork 的
-# rk-6.1-rkr7.2-lz-rk58ch 分支（携带 rk3588-lz-rk58ch.dts 提交）。
-# 单次运行并行产出两个变体（matrix）：minimal 与 desktop。
-# 单个镜像构建约 40~90 分钟（desktop 更久）。
+# 手动触发，调用 armbian/build 框架为 lz-rk58ch 构建完整 Armbian 镜像，
+# 并在构建结束后自动把镜像发布到本仓库的 GitHub Releases（不落本地）。
+#
+# 默认参数已固化（用户指定）：
+#   release=trixie、kernel_repo=https://github.com/LSP0123/linux-rockchip、
+#   kernel_branch=rk-6.1-rkr7.2-lz-rk58ch（携带 rk3588-lz-rk58ch.dts 提交）
+#
+# 每次运行产出 4 个变体（matrix 并行）：minimal + desktop(gnome/kde/xfce)。
+# Release 标题 = 本次编译开始时间 yyyymmdd-hhmm（UTC）；镜像以 xz 压缩
+# 直接作为 release 资产上传，压缩选项参考 armbian 官方 distro-build 流程。
+# 单镜像构建约 40~90 分钟，desktop(full tier) 更久。
 
 on:
   workflow_dispatch:
@@ -26,14 +32,41 @@ on:
         description: 'Kernel branch containing the DTS commit'
         required: false
         default: 'rk-6.1-rkr7.2-lz-rk58ch'
+      desktop_tier:
+        description: 'Desktop package tier (minimal/mid/full)'
+        required: false
+        default: 'full'
+        type: choice
+        options:
+          - minimal
+          - mid
+          - full
+
+permissions:
+  contents: write   # 发布 release 需要
 
 concurrency:
   group: image-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # 单一入口：取统一的编译开始时间戳，作为 release 标题（yyyymmdd-hhmm）
+  timestamp:
+    name: Determine release timestamp
+    runs-on: ubuntu-latest
+    outputs:
+      reltitle: ${{ steps.ts.outputs.reltitle }}
+      reldate: ${{ steps.ts.outputs.reldate }}
+    steps:
+      - name: Timestamp
+        id: ts
+        run: |
+          echo "reltitle=$(date -u +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+          echo "reldate=$(date -u +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_OUTPUT
+
   build-image:
-    name: Armbian image for lz-rk58ch (${{ matrix.variant }})
+    name: Image ${{ matrix.variant }}
+    needs: [ timestamp ]
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
@@ -43,9 +76,18 @@ jobs:
           - variant: minimal
             build_minimal: 'yes'
             build_desktop: 'no'
-          - variant: desktop
+          - variant: desktop-gnome
             build_minimal: 'no'
             build_desktop: 'yes'
+            desktop_environment: 'gnome'
+          - variant: desktop-kde
+            build_minimal: 'no'
+            build_desktop: 'yes'
+            desktop_environment: 'kde-plasma'
+          - variant: desktop-xfce
+            build_minimal: 'no'
+            build_desktop: 'yes'
+            desktop_environment: 'xfce'
     steps:
       - name: Checkout submission repo
         uses: actions/checkout@v4
@@ -71,8 +113,7 @@ jobs:
       # Armbian 的构建容器无 --privileged，自己执行 update-binfmts 会失败，
       # arch-test 'arm64' 不通过后在 prepare_host 阶段直接退出。
       # 宿主机注册的 handler（F 标志内嵌解释器）对全部容器可见。
-      # platforms: all 同时覆盖 armbian 想注册的 arm/aarch64/riscv64/loongarch64，
-      # 避免容器内残留的多余 Failed-to-update-binfmts 错误注解。
+      # platforms: all 同时覆盖 armbian 想注册的 arm/aarch64/riscv64/loongarch64。
       - name: Set up QEMU for cross-arch build
         uses: docker/setup-qemu-action@v3
         with:
@@ -107,15 +148,16 @@ jobs:
           # CI has no tty: every interactive dialog must be answered in
           # advance, or the build dies with "stdin is not a terminal":
           #   KERNEL_CONFIGURE=no     - skip "Select the kernel configuration"
-          #   BUILD_MINIMAL/BUILD_DESKTOP explicit - skip "Select the target image type"
-          #   BUILD_MINIMAL explicit  - skip standard-vs-minimal dialog
-          #   DESKTOP_ENVIRONMENT + DESKTOP_TIER explicit (desktop variant) -
+          #   BUILD_MINIMAL/BUILD_DESKTOP explicit - skip image-type dialogs
+          #   DESKTOP_ENVIRONMENT + DESKTOP_TIER explicit (desktop variants) -
           #     skip "Choose a desktop environment" / "Choose desktop tier";
-          #     FULL_DESKTOP in board files is a legacy var the framework no
-          #     longer maps to a tier, so pass DESKTOP_TIER=full directly.
+          #     FULL_DESKTOP in board files is legacy, pass DESKTOP_TIER directly.
+          #
+          # COMPRESS_OUTPUTIMAGE=sha,xz: compress the image to .img.xz at build
+          # end (same option the official distro-build matrix uses, with sha256).
           EXTRA_ARGS=""
-          if [ "${{ matrix.variant }}" = "desktop" ]; then
-            EXTRA_ARGS="DESKTOP_ENVIRONMENT=xfce DESKTOP_TIER=full"
+          if [ "${{ matrix.build_desktop }}" = "yes" ]; then
+            EXTRA_ARGS="DESKTOP_ENVIRONMENT=${{ matrix.desktop_environment }} DESKTOP_TIER=${{ inputs.desktop_tier }}"
           fi
           ./compile.sh build \
             BOARD=lz-rk58ch \
@@ -127,18 +169,54 @@ jobs:
             BUILD_STABLE=no \
             EXPERT=yes \
             KERNEL_GIT_CACHE_TTL=300 \
-            COMPRESS_OUTPUTIMAGE=sha \
+            COMPRESS_OUTPUTIMAGE=sha,xz \
             $EXTRA_ARGS
 
-      - name: Upload image artifacts
+      - name: Collect image outputs
+        id: outputs
+        run: |
+          mkdir -p release-assets
+          ls -lh build/output/images/ || true
+          # 镜像（xz 压缩）+ sha256 校验 + 板卡 dtb（如框架一并产出）
+          find build/output/images/ -maxdepth 1 -type f \
+            \( -name '*.img.xz' -o -name '*.img.xz.sha' -o -name '*.img' -o -name '*.img.sha' -o -name '*.dtb' \) \
+            -exec cp {} release-assets/ \;
+          echo "files:"; ls -lh release-assets/
+          if [ -z "$(ls release-assets/ 2>/dev/null)" ]; then
+            echo "::warning::未发现镜像产物，跳过发布（仍保留日志 artifact）"
+          fi
+
+      - name: Upload as workflow artifact (backup)
         uses: actions/upload-artifact@v4
         with:
           name: armbian-lz-rk58ch-image-${{ matrix.variant }}
-          path: |
-            build/output/images/*.img
-            build/output/images/*.img.sha
-          if-no-files-found: warn
+          path: release-assets/*
+          if-no-files-found: ignore
           retention-days: 7
+
+      # 直接发布到 release：每个变体把自己的资产追加到同一个 release
+      # （tag=标题=时间戳），ncipollo/release-action 的 allowUpdates 模式
+      # 允许四个并行 job 依次合并资产，全部保留。
+      - name: Publish images to GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.timestamp.outputs.reltitle }}
+          name: ${{ needs.timestamp.outputs.reltitle }}
+          body: |
+            Armbian image for **LX-R58CH V10** (`lz-rk58ch`, Rockchip RK3588)
+
+            - Build started: ${{ needs.timestamp.outputs.reldate }}
+            - Kernel: `${{ inputs.kernel_branch }}` from ${{ inputs.kernel_repo }}
+            - Userspace: ${{ inputs.release }} (vendor branch)
+            - Asset `${{ matrix.variant }}` produced by this run
+
+            烧写：`xz -d` 解压后用 dd / balenaEtcher / rkdeveloptool 写入 eMMC 或 SD。
+          prerelease: false
+          allowUpdates: true
+          removeArtifacts: false
+          updateOnlyUnreleased: false
+          artifacts: release-assets/*
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload build logs on failure
         if: failure()
