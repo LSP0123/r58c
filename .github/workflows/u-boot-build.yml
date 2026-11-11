@@ -125,7 +125,7 @@ jobs:
           if [ -n "$DEB" ]; then cp "$DEB" release-assets/; fi
           cd release-assets && sha256sum * > SHA256SUMS 2>/dev/null || true
           ls -lh
-          if [ -z "$(ls -A release-assets 2>/dev/null)" ]; then
+          if [ -z "$(ls -A . 2>/dev/null)" ]; then
             echo "::error::未收集到任何 U-Boot 产物"; exit 1
           fi
 
