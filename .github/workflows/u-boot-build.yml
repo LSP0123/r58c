@@ -1,0 +1,168 @@
+name: Build U-Boot only (manual)
+
+# 只重建 U-Boot 部分并发布到 GitHub Releases（不构建整镜像，不落本地）。
+# 流程：armbian/build 框架 artifact 模式（./compile.sh uboot）→ 从 deb/构建目录
+# 收集 idbloader.img + u-boot.itb → 合并出可直接 dd 的 u-boot-rockchip.bin →
+# 发布到按编译开始时间命名的 Release（yyyymmdd-hhmm，UTC）。
+#
+# 烧写（任选其一）：
+#   dd if=u-boot-rockchip.bin of=<目标盘> bs=32k seek=1 conv=notrunc
+#   或分别：dd if=idbloader.img ... bs=32k seek=1 / dd if=u-boot.itb ... bs=32k seek=256
+#   （Rockchip Android GPT：uboot 分区在 8MiB 处）
+
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Armbian userspace release (for artifact naming)'
+        required: true
+        default: 'trixie'
+        type: choice
+        options:
+          - bookworm
+          - trixie
+          - noble
+
+permissions:
+  contents: write   # 发布 release 需要
+
+concurrency:
+  group: uboot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  timestamp:
+    name: Determine release timestamp
+    runs-on: ubuntu-latest
+    outputs:
+      reltitle: ${{ steps.ts.outputs.reltitle }}
+      reldate: ${{ steps.ts.outputs.reldate }}
+    steps:
+      - name: Timestamp
+        id: ts
+        run: |
+          echo "reltitle=$(date -u +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+          echo "reldate=$(date -u +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_OUTPUT
+
+  build-uboot:
+    name: Build U-Boot for lz-rk58ch
+    needs: [ timestamp ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout submission repo
+        uses: actions/checkout@v4
+
+      - name: Maximize disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/share/dotnet \
+                       /usr/local/graalvm /opt/hostedtoolcache/CodeQL \
+                       /usr/share/swift /usr/local/.ghcup 2>/dev/null || true
+          sudo docker image prune -a -f >/dev/null 2>&1 || true
+          df -h /
+
+      - name: Checkout armbian/build (main)
+        uses: actions/checkout@v4
+        with:
+          repository: armbian/build
+          ref: main
+          path: build
+
+      - name: Install the board file (+ board U-Boot source override)
+        run: |
+          cp armbian-build/config/boards/lz-rk58ch.csc build/config/boards/
+          printf '\n# board-specific U-Boot: UART2-M2 console, no PCIe, console enabled\n' >> build/config/boards/lz-rk58ch.csc
+          printf 'function post_family_config__lz_rk58ch_uboot_source() {\n' >> build/config/boards/lz-rk58ch.csc
+          printf '\tdeclare -g BOOTSOURCE="https://github.com/LSP0123/u-boot.git"\n' >> build/config/boards/lz-rk58ch.csc
+          printf '\tdeclare -g BOOTBRANCH="branch:next-dev-v2024.10-lz-rk58ch"\n' >> build/config/boards/lz-rk58ch.csc
+          printf '\tdeclare -g BOOTCONFIG="lz-rk58ch-rk3588_defconfig"\n' >> build/config/boards/lz-rk58ch.csc
+          printf '}\n' >> build/config/boards/lz-rk58ch.csc
+          cat build/config/boards/lz-rk58ch.csc
+
+      - name: Build U-Boot artifact
+        working-directory: build
+        run: |
+          # artifact CLI ('uboot') runs compile_uboot exactly like the full
+          # image build does (docker relaunch, rkbin blobs, board defconfig).
+          # RELEASE is only used for artifact naming; no tty, so every
+          # interactive dialog is answered explicitly.
+          ./compile.sh uboot \
+            BOARD=lz-rk58ch \
+            BRANCH=vendor \
+            RELEASE=${{ inputs.release }} \
+            KERNEL_CONFIGURE=no \
+            BUILD_STABLE=no \
+            EXPERT=yes \
+            KERNEL_GIT_CACHE_TTL=300
+
+      - name: Collect U-Boot outputs
+        id: collect
+        run: |
+          mkdir -p release-assets
+          echo "== deb packages found =="; find build -name 'u-boot-*lz-rk58ch*.deb' || true
+          echo "== raw build outputs found =="; find build -name 'idbloader.img' -o -name 'u-boot.itb' -o -name 'u-boot-rockchip.bin' | head -10
+          # 优先从 deb 解出（打包时已含全部可烧写文件）
+          DEB=$(find build -name 'u-boot-*lz-rk58ch*.deb' | head -1 || true)
+          if [ -n "$DEB" ]; then
+            dpkg-deb -x "$DEB" uboot-deb
+            find uboot-deb -name 'idbloader.img'    -exec cp {} release-assets/ \;
+            find uboot-deb -name 'u-boot.itb'       -exec cp {} release-assets/ \;
+            find uboot-deb -name 'u-boot-rockchip.bin' -exec cp {} release-assets/ \;
+          fi
+          # 兜底：构建目录里的原始产物
+          find build -name 'idbloader.img'  -exec cp {} release-assets/ \; 2>/dev/null || true
+          find build -name 'u-boot.itb'     -exec cp {} release-assets/ \; 2>/dev/null || true
+          find build -name 'u-boot-rockchip.bin' -exec cp {} release-assets/ \; 2>/dev/null || true
+          # 合并出可直接 dd 的完整 loader（idbloader@32K + itb@8M）
+          if [ ! -f release-assets/u-boot-rockchip.bin ] \
+             && [ -f release-assets/idbloader.img ] \
+             && [ -f release-assets/u-boot.itb ]; then
+            dd if=/dev/zero of=release-assets/u-boot-rockchip.bin bs=1M count=12
+            dd if=release-assets/idbloader.img of=release-assets/u-boot-rockchip.bin seek=64 conv=notrunc status=none
+            dd if=release-assets/u-boot.itb of=release-assets/u-boot-rockchip.bin seek=16384 conv=notrunc status=none
+          fi
+          # 附一份 deb 本体（含 write 脚本，可选安装方式）
+          if [ -n "$DEB" ]; then cp "$DEB" release-assets/; fi
+          cd release-assets && sha256sum * > SHA256SUMS 2>/dev/null || true
+          ls -lh
+          if [ -z "$(ls -A release-assets 2>/dev/null)" ]; then
+            echo "::error::未收集到任何 U-Boot 产物"; exit 1
+          fi
+
+      - name: Publish U-Boot to GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ needs.timestamp.outputs.reltitle }}
+          name: ${{ needs.timestamp.outputs.reltitle }}
+          body: |
+            U-Boot (board-specific) for **LX-R58CH V10** (`lz-rk58ch`, RK3588)
+
+            - Build started: ${{ needs.timestamp.outputs.reldate }}
+            - Source: `LSP0123/u-boot` branch `next-dev-v2024.10-lz-rk58ch`
+              (`lz-rk58ch-rk3588_defconfig`: UART2 console on M2 pins GPIO3_B1/B2
+              @ 1500000, console enabled, no PCIe, 3s bootdelay)
+
+            烧写（二选一）：
+            ```
+            # 方式一：完整 loader 一次写入（32KiB 偏移）
+            dd if=u-boot-rockchip.bin of=/dev/mmcblk0 bs=32k seek=1 conv=notrunc
+            # 方式二：线刷 maskrom 模式下用 rkdeveloptool 写 loader
+            rkdeveloptool wl 64 u-boot-rockchip.bin
+            ```
+            写完后重启，串口（1500000）应出现 U-Boot banner 与 3 秒倒计时。
+          prerelease: false
+          allowUpdates: true
+          removeArtifacts: false
+          artifacts: release-assets/*
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: u-boot-build-logs
+          path: |
+            build/output/logs/**
+            build/logs/**
+          if-no-files-found: ignore
+          retention-days: 7
