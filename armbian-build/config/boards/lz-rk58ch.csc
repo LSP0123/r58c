@@ -3,7 +3,7 @@ BOARD_NAME="LX-R58CH V10"
 BOARDFAMILY="rockchip-rk3588"
 BOARD_MAINTAINER="" # TODO: set your GitHub handle before submitting
 INTRODUCED="2026"
-BOOTCONFIG="rock-5b-rk3588_defconfig" # interim: no dedicated U-Boot config for this ODM board yet
+BOOTCONFIG="lz-rk58ch-rk3588_defconfig" # dedicated board U-Boot config (fork: LSP0123/u-boot, branch next-dev-v2024.10-lz-rk58ch)
 KERNEL_TARGET="vendor"
 KERNEL_TEST_TARGET="vendor"
 FULL_DESKTOP="yes"
@@ -12,7 +12,7 @@ BOOT_FDT_FILE="rockchip/rk3588-lz-rk58ch.dtb"
 BOOT_SCENARIO="spl-blobs"
 IMAGE_PARTITION_TABLE="gpt"
 
-# Serial console: UART2 based debug port handled by the fiq-debugger
+# Serial console: UART2 on the M2 pins (GPIO3_B1/B2), fiq-debugger
 # (ttyFIQ0 @ 1500000). The rockchip-rk3588 family already defaults SERIALCON
 # to ttyFIQ0 on the vendor branch, so no override is needed here.
 
