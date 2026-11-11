@@ -1,9 +1,10 @@
 name: Build Armbian image (manual)
 
-# 可选：手动触发，调用 armbian/build 框架为 lz-rk58ch 构建完整 Armbian 镜像。
+# 手动触发，调用 armbian/build 框架为 lz-rk58ch 构建完整 Armbian 镜像。
 # 默认参数已固化（用户指定）：release=trixie、内核用 LSP0123 fork 的
 # rk-6.1-rkr7.2-lz-rk58ch 分支（携带 rk3588-lz-rk58ch.dts 提交）。
-# 点击 Run workflow 直接跑即可；镜像构建耗时约 40~90 分钟。
+# 单次运行并行产出两个变体（matrix）：minimal 与 desktop。
+# 单个镜像构建约 40~90 分钟（desktop 更久）。
 
 on:
   workflow_dispatch:
@@ -32,9 +33,19 @@ concurrency:
 
 jobs:
   build-image:
-    name: Armbian image for lz-rk58ch
+    name: Armbian image for lz-rk58ch (${{ matrix.variant }})
     runs-on: ubuntu-latest
-    timeout-minutes: 300
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: minimal
+            build_minimal: 'yes'
+            build_desktop: 'no'
+          - variant: desktop
+            build_minimal: 'no'
+            build_desktop: 'yes'
     steps:
       - name: Checkout submission repo
         uses: actions/checkout@v4
@@ -56,6 +67,17 @@ jobs:
           sudo docker image prune -a -f >/dev/null 2>&1 || true
           df -h /
 
+      # 跨架构构建（arm64 目标 / amd64 runner）：必须在宿主机注册 QEMU binfmt。
+      # Armbian 的构建容器无 --privileged，自己执行 update-binfmts 会失败，
+      # arch-test 'arm64' 不通过后在 prepare_host 阶段直接退出。
+      # 宿主机注册的 handler（F 标志内嵌解释器）对全部容器可见。
+      # platforms: all 同时覆盖 armbian 想注册的 arm/aarch64/riscv64/loongarch64，
+      # 避免容器内残留的多余 Failed-to-update-binfmts 错误注解。
+      - name: Set up QEMU for cross-arch build
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
       - name: Checkout armbian/build (main)
         uses: actions/checkout@v4
         with:
@@ -63,7 +85,7 @@ jobs:
           ref: main
           path: build
 
-      - name: Install the board file (+ optional kernel-source override for testing)
+      - name: Install the board file (+ kernel-source override for testing)
         run: |
           cp armbian-build/config/boards/lz-rk58ch.csc build/config/boards/
           if [ -n "${{ inputs.kernel_repo }}" ]; then
@@ -81,25 +103,37 @@ jobs:
           # Current armbian/build CLI: 'create' was removed; 'build' is the
           # full-image command (auto-relaunches into the official Docker
           # builder container on GitHub runners, host deps included).
-          # KERNEL_CONFIGURE=no: CI has no tty, so the interactive
-          # "Select the kernel configuration" dialog must be answered
-          # in advance (no menuconfig).
+          #
+          # CI has no tty: every interactive dialog must be answered in
+          # advance, or the build dies with "stdin is not a terminal":
+          #   KERNEL_CONFIGURE=no     - skip "Select the kernel configuration"
+          #   BUILD_MINIMAL/BUILD_DESKTOP explicit - skip "Select the target image type"
+          #   BUILD_MINIMAL explicit  - skip standard-vs-minimal dialog
+          #   DESKTOP_ENVIRONMENT + DESKTOP_TIER explicit (desktop variant) -
+          #     skip "Choose a desktop environment" / "Choose desktop tier";
+          #     FULL_DESKTOP in board files is a legacy var the framework no
+          #     longer maps to a tier, so pass DESKTOP_TIER=full directly.
+          EXTRA_ARGS=""
+          if [ "${{ matrix.variant }}" = "desktop" ]; then
+            EXTRA_ARGS="DESKTOP_ENVIRONMENT=xfce DESKTOP_TIER=full"
+          fi
           ./compile.sh build \
             BOARD=lz-rk58ch \
             BRANCH=vendor \
             RELEASE=${{ inputs.release }} \
             KERNEL_CONFIGURE=no \
-            BUILD_MINIMAL=no \
-            BUILD_DESKTOP=no \
+            BUILD_MINIMAL=${{ matrix.build_minimal }} \
+            BUILD_DESKTOP=${{ matrix.build_desktop }} \
             BUILD_STABLE=no \
             EXPERT=yes \
             KERNEL_GIT_CACHE_TTL=300 \
-            COMPRESS_OUTPUTIMAGE=sha
+            COMPRESS_OUTPUTIMAGE=sha \
+            $EXTRA_ARGS
 
       - name: Upload image artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: armbian-lz-rk58ch-image
+          name: armbian-lz-rk58ch-image-${{ matrix.variant }}
           path: |
             build/output/images/*.img
             build/output/images/*.img.sha
@@ -110,7 +144,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: armbian-lz-rk58ch-logs
+          name: armbian-lz-rk58ch-logs-${{ matrix.variant }}
           path: |
             build/output/logs/**
             build/logs/**
