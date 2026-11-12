@@ -31,8 +31,8 @@ Boot: UART2 debug console (fiq-debugger, ttyFIQ @ 1500000).
 
 ---
  arch/arm64/boot/dts/rockchip/Makefile        |    1 +
- .../boot/dts/rockchip/rk3588-lz-rk58ch.dts   | 1799 ++++++++++++++++++
- 2 files changed, 1800 insertions(+)
+ .../boot/dts/rockchip/rk3588-lz-rk58ch.dts   | 1875 ++++++++++++++++++
+ 2 files changed, 1876 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/rockchip/Makefile b/arch/arm64/boot/dts/rockchip/Makefile
 --- a/arch/arm64/boot/dts/rockchip/Makefile
@@ -49,7 +49,7 @@ diff --git a/arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dts b/arch/arm64/boot
 new file mode 100644
 --- /dev/null
 +++ b/arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dts
-@@ -0,0 +1,1799 @@
+@@ -0,0 +1,1875 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * LX-R58CH V10 board (rockchip,lz-rk3588-r58ch)
@@ -78,6 +78,37 @@ new file mode 100644
 +/ {
 +	model = "LX-R58CH V10";
 +	compatible = "rockchip,lz-rk3588-r58ch", "rockchip,rk3588";
++
++	/*
++	 * Drop the inherited /chosen bootargs (rk3588-linux.dtsi ships
++	 * "root=PARTUUID=614e0000-0000 rw rootwait rcu..." for the vendor
++	 * Android flow). The vendor U-Boot merges the kernel-DTB bootargs
++	 * into its environment and REPLACES the existing root= with that
++	 * dummy PARTUUID, so Armbian's boot.scr rootdev (from armbianEnv.txt)
++	 * was silently discarded and the kernel dropped to an initramfs
++	 * shell with "PARTUUID=614e0000-0000 does not exist". Without the
++	 * property the merge is skipped and boot.scr's cmdline passes
++	 * through untouched; U-Boot still writes the final cmdline into
++	 * /chosen at booti time as usual.
++	 */
++	chosen {
++		/delete-property/ bootargs;
++	};
++
++	/* Give the inherited reserved-memory node a real region (the dtsi
++	 * declares drm-logo with a zero base, which the kernel rejects with
++	 * "failed to reserve memory for node 'drm-logo@0'"). Use the address
++	 * the stock 5.10 firmware used; it sits at the top of the first
++	 * SDRAM bank, below the 0xf0000000 limit. */
++	reserved-memory {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		drm-logo@0 {
++			reg = <0x0 0xedf00000 0x0 0x62000>;
++		};
++	};
 +
 +	/*--------------- Volume keys (SARADC channel 1) ---------------*/
 +	adc_keys: adc-keys {
@@ -933,6 +964,9 @@ new file mode 100644
 +
 +&vop {
 +	status = "okay";
++	/* OPP supply (EVB reference): without vop-supply the driver skips
++	 * VOP DVFS init (_opp_set_regulators fails). */
++	vop-supply = <&vdd_log_s0>;
 +	assigned-clocks = <&cru ACLK_VOP>;
 +	assigned-clock-rates = <500000000>;
 +};
@@ -1536,10 +1570,16 @@ new file mode 100644
 +};
 +
 +&rkvenc0 {
++	/* Codec OPP supplies (EVB reference): without venc-supply the
++	 * rkvenc2 driver fails _opp_set_regulators and skips OPP init. */
++	venc-supply = <&vdd_vdenc_s0>;
++	mem-supply = <&vdd_vdenc_mem_s0>;
 +	status = "okay";
 +};
 +
 +&rkvenc1 {
++	venc-supply = <&vdd_vdenc_s0>;
++	mem-supply = <&vdd_vdenc_mem_s0>;
 +	status = "okay";
 +};
 +
@@ -1583,7 +1623,7 @@ new file mode 100644
 +	status = "okay";
 +};
 +
-+/* SDIO: AP6256 WiFi */
++/* SDIO: AP6256 WiFi (BCM43455, SDIO id 02d0:a9bf) */
 +&sdio {
 +	status = "okay";
 +	mmc-pwrseq = <&sdio_pwrseq>;
@@ -1596,6 +1636,19 @@ new file mode 100644
 +	 * pin list taken from the stock 5.10 firmware DTB.
 +	 */
 +	pinctrl-0 = <&sdiom0_lz>;
++	/* Bus properties carried over from the stock firmware DTB; the brcm
++	 * chip requires non-removable + keep-power-in-suspend + cap-sdio-irq,
++	 * and the rest caps the bus to what the module is specified for. */
++	max-frequency = <150000000>;
++	bus-width = <4>;
++	cap-sd-highspeed;
++	cap-sdio-irq;
++	keep-power-in-suspend;
++	non-removable;
++	no-sd;
++	no-mmc;
++	disable-wp;
++	sd-uhs-sdr104;
 +};
 +
 +/* SD card: unused in the stock firmware; keep supply config */
@@ -1774,6 +1827,29 @@ new file mode 100644
 +};
 +
 +/*--------------- USB ---------------*/
++
++/*
++ * Enable the u2phy PARENT nodes too (EVB reference): the 6.1 dtsi leaves
++ * them disabled, and usbdp_phy0's 4th clock is the u2phy0 clock output
++ * (<&u2phy0>), so with the parents disabled that clock fails to resolve
++ * ("Failed to get clk index: 3") and the whole USB stack - both host
++ * pairs and the USB3 OTG controller - stays in deferred probe forever.
++ */
++&u2phy0 {
++	status = "okay";
++};
++
++&u2phy1 {
++	status = "okay";
++};
++
++&u2phy2 {
++	status = "okay";
++};
++
++&u2phy3 {
++	status = "okay";
++};
 +
 +&u2phy0_otg {
 +	status = "okay";
