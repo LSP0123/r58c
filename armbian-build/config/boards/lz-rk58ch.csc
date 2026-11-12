@@ -28,3 +28,18 @@ function post_family_tweaks__lz_rk58ch_naming_audios() {
 
 	return 0
 }
+
+# Belt-and-braces for the vendor U-Boot cmdline fixup: the vendor booti
+# merges the kernel-DTB /chosen bootargs into the environment and
+# replaces the FIRST root= token (the Android PARTUUID fixup). The board
+# kernel DTS already deletes /chosen/bootargs (the primary fix), but if a
+# boot path ever merges a DTB that still carries one, this keeps a
+# working root: the kernel uses the LAST root= token it sees.
+function post_family_tweaks__lz_rk58ch_bootcmd_root_guard() {
+	display_alert "$BOARD" "Applying boot.cmd root= guard" "info"
+
+	sed -i 's|setenv bootargs "root=|setenv bootargs "root=/dev/null root=|' $SDCARD/boot/boot.cmd
+	mkimage -C none -A arm -T script -d $SDCARD/boot/boot.cmd $SDCARD/boot/boot.scr
+
+	return 0
+}
