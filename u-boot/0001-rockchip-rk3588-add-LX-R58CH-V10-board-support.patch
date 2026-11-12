@@ -136,7 +136,7 @@ new file mode 100644
 +# CONFIG_DISABLE_CONSOLE is not set
 +CONFIG_SYS_CONSOLE_INFO_QUIET=y
 +# CONFIG_DISPLAY_CPUINFO is not set
-+# CONFIG_ANDROID_BOOTLOADER is not set
++CONFIG_ANDROID_BOOTLOADER=y
 +# CONFIG_ANDROID_AVB is not set
 +# CONFIG_ANDROID_BOOT_IMAGE_HASH is not set
 +CONFIG_SPL_BOARD_INIT=y
@@ -165,7 +165,7 @@ new file mode 100644
 +CONFIG_CMD_GPT=y
 +# CONFIG_CMD_LOADB is not set
 +# CONFIG_CMD_LOADS is not set
-+# CONFIG_CMD_BOOT_ANDROID is not set
++CONFIG_CMD_BOOT_ANDROID=y
 +CONFIG_CMD_MMC=y
 +CONFIG_CMD_PCI=y
 +CONFIG_CMD_SF=y
@@ -309,11 +309,11 @@ new file mode 100644
 +CONFIG_LZ4=y
 +CONFIG_ERRNO_STR=y
 +# CONFIG_EFI_LOADER is not set
-+# CONFIG_AVB_LIBAVB is not set
-+# CONFIG_AVB_LIBAVB_AB is not set
++CONFIG_AVB_LIBAVB=y
++CONFIG_AVB_LIBAVB_AB=y
 +# CONFIG_AVB_LIBAVB_ATX is not set
-+# CONFIG_AVB_LIBAVB_USER is not set
-+# CONFIG_RK_AVB_LIBAVB_USER is not set
++CONFIG_AVB_LIBAVB_USER=y
++CONFIG_RK_AVB_LIBAVB_USER=y
 +
 +# Persistent U-Boot environment on eMMC (saveenv support).
 +# The Android-flavoured reference configs default to nowhere (misc/BCB
