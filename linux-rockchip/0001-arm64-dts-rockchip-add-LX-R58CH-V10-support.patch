@@ -31,8 +31,8 @@ Boot: UART2 debug console (fiq-debugger, ttyFIQ @ 1500000).
 
 ---
  arch/arm64/boot/dts/rockchip/Makefile        |    1 +
- .../boot/dts/rockchip/rk3588-lz-rk58ch.dts   | 1891 ++++++++++++++++++
- 2 files changed, 1892 insertions(+)
+ .../boot/dts/rockchip/rk3588-lz-rk58ch.dts   | 1879 ++++++++++++++++++
+ 2 files changed, 1880 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/rockchip/Makefile b/arch/arm64/boot/dts/rockchip/Makefile
 --- a/arch/arm64/boot/dts/rockchip/Makefile
@@ -49,7 +49,7 @@ diff --git a/arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dts b/arch/arm64/boot
 new file mode 100644
 --- /dev/null
 +++ b/arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dts
-@@ -0,0 +1,1886 @@
+@@ -0,0 +1,1874 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * LX-R58CH V10 board (rockchip,lz-rk3588-r58ch)
@@ -110,26 +110,10 @@ new file mode 100644
 +		};
 +	};
 +
-+	/*--------------- Volume keys (SARADC channel 1) ---------------*/
-+	adc_keys: adc-keys {
-+		compatible = "adc-keys";
-+		io-channels = <&saradc 1>;
-+		io-channel-names = "buttons";
-+		keyup-threshold-microvolt = <1800000>;
-+		poll-interval = <100>;
-+
-+		vol-up-key {
-+			label = "volume up";
-+			linux,code = <KEY_VOLUMEUP>;
-+			press-threshold-microvolt = <17000>;
-+		};
-+
-+		vol-down-key {
-+			label = "volume down";
-+			linux,code = <KEY_VOLUMEDOWN>;
-+			press-threshold-microvolt = <417000>;
-+		};
-+	};
++	/* The /adc-keys node (volume keys on SARADC ch1) is removed: the board
++	 * has no volume buttons. The strap on ch1 is only used by U-Boot loader
++	 * detection; in Linux a small dip of the 1.8V rail makes adc-keys emit
++	 * spurious KEY_VOLUMEUP/DOWN presses which wake the screen while locked. */
 +
 +	/*--------------- Backlight (PWM11) ---------------*/
 +	backlight: backlight {
@@ -1307,7 +1291,11 @@ new file mode 100644
 +	pinctrl-0 = <&i2c5m2_xfer>;
 +
 +	ilitek@41 {
-+		compatible = "ilitek,ili2511";
++		/* The controller speaks Ilitek protocol v3 (0x42 query returns 03.01):
++	 * served by the in-tree ili210x driver (2117/2120/251x family). The newer
++	 * ilitek_ts_i2c driver only supports protocol v6 and its probe fails in
++	 * protocol init (-EINVAL) without ever binding. */
++		compatible = "ilitek,ili251x";
 +		reg = <0x41>;
 +		interrupt-parent = <&gpio3>;
 +		interrupts = <RK_PA3 IRQ_TYPE_EDGE_FALLING>;
