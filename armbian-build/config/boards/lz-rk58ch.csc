@@ -76,3 +76,16 @@ function post_family_tweaks__lz_rk58ch_bootcmd_root_guard() {
 
 	return 0
 }
+
+# Touch-to-wake shim. Touch events reach mutter, but a blank (locked)
+# panel ignores touch-type input and only unblanks on key-type events.
+# lz-wake-helper watches the ILI2511 touchscreen evdev node and, while
+# the panel is blank, injects a KEY_ENTER press through uinput on the
+# first touch-down so the lock screen lights up. Validated on hardware.
+function post_family_tweaks__lz_rk58ch_touch_wake_helper() {
+	display_alert "$BOARD" "Installing touch-to-wake helper deb" "info"
+
+	install_deb_chroot "${SRC}/packages/lz-wake-helper_1.0-1_all.deb"
+
+	return 0
+}
