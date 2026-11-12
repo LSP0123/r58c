@@ -20,6 +20,39 @@ BOOTFS_TYPE="ext4"
 # (ttyFIQ0 @ 1500000). The rockchip-rk3588 family already defaults SERIALCON
 # to ttyFIQ0 on the vendor branch, so no override is needed here.
 
+# Trim the shared vendor kernel config for this board (appended entries
+# win in Kconfig): the GPU runs on the mainline Panthor DRM KMD (see the
+# board DTS &gpu_panthor), so the whole vendor Mali kbase DDK family is
+# unused and only bloats vmlinuz. The append happens before the kernel
+# build reads the config file.
+function post_family_config__lz_rk58ch_kernel_config_trim() {
+	display_alert "$BOARD" "Kernel config trim: vendor Mali kbase off (Panther GPU stack)" "info"
+	cat >> "${SRC}/config/kernel/linux-rk35xx-vendor.config" << 'EOF'
+# --- lx-rk58ch board trim (appended; later entries win in Kconfig) ---
+# GPU runs on the mainline Panthor DRM KMD (&gpu_panthor in the board DTS);
+# the vendor Mali kbase DDK (MIDGARD + VALHALL, incl. EXPERT/DEBUG paths)
+# is unused dead weight in vmlinuz.
+# CONFIG_MALI_MIDGARD is not set
+# CONFIG_MALI_VALHALL is not set
+EOF
+}
+
+# /boot only ever loads rockchip/rk3588-lz-rk58ch.dtb (BOOT_FDT_FILE), but
+# the dtb package ships the whole rockchip family (~116 MB), which fills the
+# 230 MB ext4 /boot partition to 97%. Keep only this board's dtb so future
+# kernel updates still fit. Runs after the kernel deb is installed and
+# before update-initramfs.
+function pre_update_initramfs__lz_rk58ch_trim_boot_dtb() {
+	local root_dir="${MOUNT:-${SDCARD}}"
+	local dtb_dir
+	display_alert "$BOARD" "Trimming /boot: keep only rk3588-lz-rk58ch.dtb" "info"
+	for dtb_dir in "${root_dir}"/boot/dtb-*; do
+		[[ -d "${dtb_dir}" ]] || continue
+		find "${dtb_dir}" -type f -name '*.dtb' -not -name 'rk3588-lz-rk58ch.dtb' -delete
+	done
+	return 0
+}
+
 function post_family_tweaks__lz_rk58ch_naming_audios() {
 	display_alert "$BOARD" "Renaming lz-rk58ch audios" "info"
 
