@@ -18,8 +18,17 @@ Key points versus the Rock 5B reference:
   GPIO4_B6, which are the eDP panel power and backlight-enable pins on
   this board.
 
+- The physical recovery/download switch is wired to SARADC channel 1
+  (same channel as the volume keys in the production 5.10 BSP). The
+  board DTS describes it as an adc-keys volume-up entry (press
+  threshold ~17 mV): vendor setup_download_mode() polls KEY_VOLUMEUP
+  through UCLASS_KEY, so switching to the loader position enters
+  rockusb (or maskrom) download mode before distro boot takes over.
+
 - The defconfig enables the console and a 3 second bootdelay, and turns
-  on CONFIG_CMD_SETEXPR (used by distro boot scripts); the stock
+  on CONFIG_CMD_SETEXPR (used by distro boot scripts) and
+  CONFIG_CMD_ROCKUSB (so the download command offers the full rockusb
+  upgrade path instead of falling back to the bootrom); the stock
   Rock 5B config silences the console entirely (CONFIG_DISABLE_CONSOLE)
   which makes bring-up impossible to debug over serial.
 
@@ -31,7 +40,7 @@ diff --git a/arch/arm/dts/rk3588-lz-rk58ch.dts b/arch/arm/dts/rk3588-lz-rk58ch.d
 new file mode 100644
 --- /dev/null
 +++ b/arch/arm/dts/rk3588-lz-rk58ch.dts
-@@ -0,0 +1,58 @@
+@@ -0,0 +1,91 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Copyright (c) 2026 LSP0123
@@ -70,6 +79,39 @@ new file mode 100644
 +		regulator-max-microvolt = <5000000>;
 +		vin-supply = <&vcc12v_dcin>;
 +	};
++
++	/*
++	 * Physical recovery/download switch, wired to SARADC channel 1
++	 * (same channel as the volume keys on the production 5.10 BSP).
++	 * The "loader" position pulls the pin near ground (~17 mV), which
++	 * vendor U-Boot's setup_download_mode() reads via the adc-keys
++	 * volume-up entry (KEY_VOLUMEUP) to enter rockusb/maskrom download
++	 * mode. Without this node the key class never registers and the
++	 * switch is dead.
++	 */
++	adc-keys {
++		u-boot,dm-pre-reloc;
++		compatible = "adc-keys";
++		io-channels = <&saradc 1>;
++		io-channel-names = "buttons";
++		keyup-threshold-microvolt = <1800000>;
++		poll-interval = <100>;
++		status = "okay";
++
++		vol-up-key {
++			u-boot,dm-pre-reloc;
++			label = "volume up";
++			linux,code = <115>; /* KEY_VOLUMEUP */
++			press-threshold-microvolt = <17000>;
++		};
++
++		vol-down-key {
++			u-boot,dm-pre-reloc;
++			label = "volume down";
++			linux,code = <114>; /* KEY_VOLUMEDOWN */
++			press-threshold-microvolt = <417000>;
++		};
++	};
 +};
 +
 +/*
@@ -97,7 +139,7 @@ diff --git a/configs/lz-rk58ch-rk3588_defconfig b/configs/lz-rk58ch-rk3588_defco
 new file mode 100644
 --- /dev/null
 +++ b/configs/lz-rk58ch-rk3588_defconfig
-@@ -0,0 +1,228 @@
+@@ -0,0 +1,231 @@
 +CONFIG_ARM=y
 +CONFIG_ARM_CPU_SUSPEND=y
 +CONFIG_ARCH_ROCKCHIP=y
@@ -314,6 +356,9 @@ new file mode 100644
 +CONFIG_AVB_LIBAVB_ATX=y
 +CONFIG_AVB_LIBAVB_USER=y
 +CONFIG_RK_AVB_LIBAVB_USER=y
++
++
++CONFIG_CMD_ROCKUSB=y
 +
 +# Persistent U-Boot environment on eMMC (saveenv support).
 +# The Android-flavoured reference configs default to nowhere (misc/BCB
