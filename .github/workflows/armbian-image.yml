@@ -86,12 +86,14 @@ jobs:
             {"variant":"desktop-kde","build_minimal":"no","build_desktop":"yes","desktop_environment":"kde-plasma"},
             {"variant":"desktop-xfce","build_minimal":"no","build_desktop":"yes","desktop_environment":"xfce"}
           ]'
-          WANT='${{ inputs.variants }}'
-          if [ -z "${WANT// /}" ]; then
+          WANT_CLEAN=$(echo '${{ inputs.variants }}' | tr -d '[:space:]')
+          if [ -z "$WANT_CLEAN" ]; then
             MATRIX="$ALL"
           else
-            MATRIX=$(echo "$ALL" | jq -c --arg want ",$WANT," \
-              '[.[] | select(. as $e | ($want | contains("," + $e.variant + ",")))]')
+            MATRIX=$(echo "$ALL" | jq -c --arg want "$WANT_CLEAN" '
+              ($want | split(",") | map(select(length > 0))) as $wanted
+                | [ .[] | select(.variant as $v | ($wanted | any(. == $v or ($v | endswith("-" + .))))) ]
+                ')
           fi
           echo "$MATRIX" | jq -e 'length > 0' >/dev/null || {
             echo "::error::variants 输入无效，过滤后没有任何变体"; exit 1;
