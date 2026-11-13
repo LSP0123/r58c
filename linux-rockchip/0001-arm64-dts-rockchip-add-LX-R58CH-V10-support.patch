@@ -49,7 +49,7 @@ diff --git a/arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dts b/arch/arm64/boot
 new file mode 100644
 --- /dev/null
 +++ b/arch/arm64/boot/dts/rockchip/rk3588-lz-rk58ch.dts
-@@ -0,0 +1,1874 @@
+@@ -0,0 +1,1879 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * LX-R58CH V10 board (rockchip,lz-rk3588-r58ch)
@@ -385,6 +385,11 @@ new file mode 100644
 +		rockchip,sleep-debug-en = <1>;
 +		rockchip,sleep-mode-config = <0x01000608>;
 +		rockchip,wakeup-config = <0x100>;
++		/* poweroff goes through the vendor virtual-poweroff path (SIP suspend
++		 * with PMIC rails off). The default PSCI SYSTEM_OFF path powers the
++		 * board back up (full reset) on this hardware instead of staying
++		 * off, so route shutdown through the Rockchip SIP handler. */
++		rockchip,virtual-poweroff = <1>;
 +	};
 +
 +	rockchip_system_monitor: rockchip-system-monitor {
