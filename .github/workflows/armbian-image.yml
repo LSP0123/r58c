@@ -145,17 +145,17 @@ jobs:
           ref: main
           path: build
 
-       - name: Install the board file (+ kernel/u-boot source override for testing)
-         run: |
-           cp armbian-build/config/boards/lz-rk58ch.csc build/config/boards/
-           # Board-file hooks reference ${SRC}/packages/<deb> for bundled debs
-           # (e.g. install_deb_chroot in post_family_tweaks__lz_rk58ch_touch_wake_helper);
-           # ${SRC} is the armbian/build checkout, so mirror the repo's package
-           # archive into it before the build starts.
-           if [ -d armbian-build/packages ]; then
-             mkdir -p build/packages
-             cp -v armbian-build/packages/*.deb build/packages/
-           fi
+      - name: Install the board file (+ kernel/u-boot source override for testing)
+        run: |
+          cp armbian-build/config/boards/lz-rk58ch.csc build/config/boards/
+          # Board-file hooks reference ${SRC}/packages/<deb> for bundled debs
+          # (e.g. install_deb_chroot in post_family_tweaks__lz_rk58ch_touch_wake_helper);
+          # ${SRC} is the armbian/build checkout, so mirror the repo's package
+          # archive into it before the build starts.
+          if [ -d armbian-build/packages ]; then
+            mkdir -p build/packages
+            cp -v armbian-build/packages/*.deb build/packages/
+          fi
           if [ -n "${{ inputs.kernel_repo }}" ]; then
             printf '\n# testing only: use the fork that carries the DTS commit\n' >> build/config/boards/lz-rk58ch.csc
             printf 'function post_family_config__lz_rk58ch_kernel_source_for_testing() {\n' >> build/config/boards/lz-rk58ch.csc
