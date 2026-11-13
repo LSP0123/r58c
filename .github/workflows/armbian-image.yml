@@ -24,6 +24,7 @@ on:
           - bookworm
           - trixie
           - noble
+          - resolute
       kernel_repo:
         description: 'Kernel repo containing the DTS commit (fork of armbian/linux-rockchip)'
         required: false
